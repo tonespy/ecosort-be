@@ -1,0 +1,5 @@
+*.env
+bin/
+output/
+tmp/
+temp_http/
