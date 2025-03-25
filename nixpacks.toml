@@ -1,6 +1,2 @@
-# [phases.build]
-# cmds = ['''GOOS=linux GOARCH=amd64 go build -o ./bin/linux_amd64/main ./cmd/server/''']
-
 [start]
-# cmd = './bin/linux_amd64/main'
 cmd = 'go run cmd/server/main.go'
