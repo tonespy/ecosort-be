@@ -1,6 +1,8 @@
 package server
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/tonespy/ecosort_be/config"
 	"github.com/tonespy/ecosort_be/internal/handlers"
@@ -22,6 +24,12 @@ func (s *Server) NewRouter() *gin.Engine {
 
 	// Apply middleware
 	router.Use(middleware.DefaultClientAuth(s.Config.APIKey))
+
+	// No route handler
+	router.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotImplemented, gin.H{})
+		c.Abort()
+	})
 
 	// Define routes
 	groupV1 := router.Group("/v1")
