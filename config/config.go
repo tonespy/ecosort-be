@@ -291,7 +291,8 @@ func PrepareConfig() (*Config, error) {
 
 	err = godotenv.Load()
 	if err != nil {
-		return nil, fmt.Errorf("error loading .env file: %v", err)
+		fmt.Printf("No .env file found. Assuming environment variables are set by the system.")
+		// return nil, fmt.Errorf("error loading .env file: %v", err)
 	}
 
 	ginMode := os.Getenv("GIN_MODE")
@@ -329,8 +330,13 @@ func PrepareConfig() (*Config, error) {
 		return nil, fmt.Errorf("API_REQ_KEY is not set")
 	}
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "5500"
+	}
+
 	return &Config{
-		Port:             ":5500",
+		Port:             ":" + port,
 		GinMode:          ginMode,
 		ModelPath:        modelPath,
 		RootDir:          rootDir,

@@ -1,2 +1,0 @@
-[start]
-cmd = 'go run cmd/server/main.go'
