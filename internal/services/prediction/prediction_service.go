@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/tonespy/ecosort_be/config"
 	"github.com/tonespy/ecosort_be/pkg/logger"
 
@@ -16,8 +19,10 @@ import (
 )
 
 type PredictionService struct {
-	Config *config.Config
-	Logger *logger.Logger
+	Config       *config.Config
+	Logger       *logger.Logger
+	model        *tf.SavedModel
+	sessionMutex sync.Mutex
 }
 
 // Allowed MIME types for images and videos
@@ -28,6 +33,159 @@ var allowedMIMETypes = map[string]bool{
 	"video/mp4":  true,
 	"video/avi":  true,
 	"video/mpeg": true,
+}
+
+// jobProgressMap is an in-memory "database" for job progress.
+var jobProgressMap = struct {
+	sync.RWMutex
+	Data map[string]JobProgress
+}{
+	Data: make(map[string]JobProgress),
+}
+
+var (
+	// wsConnections stores active WebSocket connections keyed by job ID.
+	wsConnections = struct {
+		sync.RWMutex
+		Connections map[string]*websocket.Conn
+	}{Connections: make(map[string]*websocket.Conn)}
+
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+)
+
+type JobImagePrediction struct {
+	JobID      string         `json:"jobID"`
+	Prediction config.Classes `json:"prediction"`
+	ImageName  string         `json:"imageName"`
+	Status     string         `json:"status,omitempty"`
+}
+
+type JobProgress struct {
+	Progress    int                  `json:"progress"`              // Percentage progress (0 to 100)
+	Status      string               `json:"status"`                // e.g. "running", "completed", "stopped"
+	Predictions []JobImagePrediction `json:"predictions,omitempty"` // Batch predictions (e.g., filenames or other result strings)
+	Image       string               `json:"image,omitempty"`       // Optional: base64 encoded image from this batch
+}
+
+// InitModel loads the TensorFlow model once and stores it for reuse.
+func (p *PredictionService) InitModel() error {
+	// Use the latest model version from configuration.
+	latestVersion := p.Config.ModelVersions[len(p.Config.ModelVersions)-1].Version
+	modelPath := filepath.Join(p.Config.RootDir, "tmp", latestVersion+".keras")
+	model, err := tf.LoadSavedModel(modelPath, []string{"serve"}, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load model: %v", err)
+	}
+	p.model = model
+	p.Logger.Info("Model loaded from "+modelPath, nil)
+	return nil
+}
+
+// getWebSocketConnection retrieves the WebSocket connection for a given jobID.
+func getWebSocketConnection(jobID string) (*websocket.Conn, bool) {
+	wsConnections.RLock()
+	defer wsConnections.RUnlock()
+	conn, ok := wsConnections.Connections[jobID]
+	return conn, ok
+}
+
+func (p *PredictionService) GetUpgrader() websocket.Upgrader {
+	return upgrader
+}
+
+func (p *PredictionService) GetWsConnections() *struct {
+	sync.RWMutex
+	Connections map[string]*websocket.Conn
+} {
+	return &wsConnections
+}
+
+func (p *PredictionService) GetJobProgressMap() *struct {
+	sync.RWMutex
+	Data map[string]JobProgress
+} {
+	return &jobProgressMap
+}
+
+// processPredictions simulates batched prediction processing.
+func (p *PredictionService) ProcessPredictions(jobID string, files []*multipart.FileHeader, jobDir string) {
+	batchSize := 10
+	total := len(files)
+	for i := 0; i < total; i += batchSize {
+		end := min(i+batchSize, total)
+
+		var predictions []JobImagePrediction
+		for j := i; j < end; j++ {
+			predictionResult, err := p.PredictImage(filepath.Join(jobDir, files[j].Filename))
+			statusInfo := "Completed"
+			if err != nil {
+				statusInfo = "Failed"
+			}
+			resultInfo := config.Classes{}
+			if predictionResult != nil {
+				resultInfo = *predictionResult
+			}
+			prediction := JobImagePrediction{
+				JobID:      jobID,
+				Prediction: resultInfo,
+				ImageName:  files[j].Filename,
+				Status:     statusInfo,
+			}
+			predictions = append(predictions, prediction)
+		}
+
+		// Optional: Here you could encode an image from one of the frames (or batch result)
+		// For simplicity, we leave Image empty in this example.
+		update := JobProgress{
+			Progress:    (end * 100) / total,
+			Status:      "running",
+			Predictions: predictions,
+		}
+
+		// Update the in-memory database.
+		jobProgressMap.Lock()
+		// If JobID exists, update the predictions, status and progress. Otherwise, create a new entry.
+		if _, ok := jobProgressMap.Data[jobID]; !ok {
+			jobProgressMap.Data[jobID] = update
+		} else {
+			previousPredictions := jobProgressMap.Data[jobID]
+			update.Predictions = append(previousPredictions.Predictions, update.Predictions...)
+			jobProgressMap.Data[jobID] = update
+		}
+		jobProgressMap.Unlock()
+
+		// If a WebSocket connection exists, send the update.
+		if ws, ok := getWebSocketConnection(jobID); ok {
+			ws.WriteJSON(update)
+		}
+
+		time.Sleep(1 * time.Second) // Simulate processing delay.
+	}
+
+	// Final update: mark as completed.
+	finalUpdate := JobProgress{
+		Progress: 100,
+		Status:   "completed",
+	}
+	if _, ok := jobProgressMap.Data[jobID]; !ok {
+		jobProgressMap.Data[jobID] = finalUpdate
+	} else {
+		previousPredictions := jobProgressMap.Data[jobID]
+		finalUpdate.Predictions = previousPredictions.Predictions
+		jobProgressMap.Data[jobID] = finalUpdate
+	}
+	jobProgressMap.Lock()
+	jobProgressMap.Data[jobID] = finalUpdate
+	jobProgressMap.Unlock()
+	if ws, ok := getWebSocketConnection(jobID); ok {
+		result := map[string]any{"jobID": jobID, "message": "Job completed", "update": finalUpdate}
+		ws.WriteJSON(result)
+		ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Job completed"))
+		ws.Close()
+		os.RemoveAll(filepath.Join("wsjobs", jobID))
+	}
 }
 
 // validateFile checks the file type and size
@@ -121,25 +279,6 @@ func preprocessImage(imagePath string) ([][][]float32, error) {
 	return tensorData, nil
 }
 
-// loadKerasModel loads the Keras model from the given path
-func (p *PredictionService) loadKerasModel(path string) (*tf.SavedModel, error) {
-	// Load the TensorFlow SavedModel
-	model, err := tf.LoadSavedModel(path, []string{"serve"}, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return model, nil
-}
-
-func (p *PredictionService) loadKerasModelFromVersion() (*tf.SavedModel, error) {
-	// Latest model version
-	latestVersion := p.Config.ModelVersions[len(p.Config.ModelVersions)-1].Version
-	// Retrieve model path
-	modelPath := filepath.Join(p.Config.RootDir, "tmp", latestVersion+".keras")
-	return p.loadKerasModel(modelPath)
-}
-
 func (p *PredictionService) ValidateAndGetTemp(file *multipart.FileHeader) (string, error) {
 	// Validate the file
 	if err := validateFile(file); err != nil {
@@ -180,63 +319,63 @@ func filterClassName(input []config.Classes, predicate func(int) bool) []config.
 	return result
 }
 
-func (p *PredictionService) PredictImage(filePath string) (string, error) {
-	// Retrieve the model
-	model, err := p.loadKerasModelFromVersion()
-	if err != nil {
-		return "", fmt.Errorf("failed to load model: %v", err)
-	}
-	defer model.Session.Close()
-
-	// Defer deleting the tmp directory
-	defer os.RemoveAll(filepath.Dir(filePath))
-
-	// Preprocess the image
-	tensorData, err := preprocessImage(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to preprocess image: %v", err)
-	}
-
-	// Debug: Log model operations
-	// for _, op := range model.Graph.Operations() {
-	// 	fmt.Println("Operation:", op.Name())
-	// }
-
-	// Create a tensor from the image data
-	fmt.Println("Tensor data length: ", len(tensorData))
-	// Reshape tensor to batch format [1, 256, 256, 3]
+// predictFromImageTensor performs inference on preprocessed tensor data using the shared model.
+// It locks the session to ensure concurrent calls are serialized.
+func (p *PredictionService) predictFromImageTensor(tensorData [][][]float32) (*config.Classes, error) {
+	// Reshape tensor to batch format: [1, 256, 256, 3]
 	batchTensor := [][][][]float32{tensorData}
 	tensor, err := tf.NewTensor(batchTensor)
 	if err != nil {
-		return "", fmt.Errorf("failed to create tensor: %v", err)
+		return nil, fmt.Errorf("failed to create tensor: %v", err)
 	}
-	fmt.Printf("Tensor Shape: %v\n", tensor.Shape())
 
-	// Run the model
-	fmt.Println("Running model...")
-	result, err := model.Session.Run(map[tf.Output]*tf.Tensor{
-		model.Graph.Operation("serve_eco_sort_static_input_layer").Output(0): tensor,
-	}, []tf.Output{
-		model.Graph.Operation("StatefulPartitionedCall").Output(0),
-	}, nil)
+	// Lock the session for thread-safe access.
+	p.sessionMutex.Lock()
+	defer p.sessionMutex.Unlock()
+
+	result, err := p.model.Session.Run(
+		map[tf.Output]*tf.Tensor{
+			p.model.Graph.Operation("serve_eco_sort_static_input_layer").Output(0): tensor,
+		},
+		[]tf.Output{
+			p.model.Graph.Operation("StatefulPartitionedCall").Output(0),
+		},
+		nil,
+	)
 	if err != nil {
-		fmt.Println("Error running model: ", err)
-		return "", fmt.Errorf("failed to run model: %v", err)
+		return nil, fmt.Errorf("failed to run model: %v", err)
 	}
 
-	// Get the predicted class
+	// Extract probabilities and determine the predicted class.
 	probabilities := result[0].Value().([][]float32)[0]
 	predictedClass := getPredictedClass(probabilities)
 
-	// Get the class name from Index
+	// Map the index to a class name using the supported classes.
 	filtered := filterClassName(p.Config.SupportedClasses, func(i int) bool {
 		return i == predictedClass
 	})
 	if len(filtered) == 0 {
-		return "", fmt.Errorf("class not found")
+		return nil, fmt.Errorf("class not found")
 	}
 
-	return filtered[0].Name, nil
+	return &filtered[0], nil
+}
+
+// PredictImage handles a single-image prediction using the shared model.
+// It validates and preprocesses the image, then calls predictFromImageTensor.
+func (p *PredictionService) PredictImage(filePath string) (*config.Classes, error) {
+	// Defer cleanup of temporary files.
+	// defer os.RemoveAll(filepath.Dir(filePath))
+	defer os.Remove(filePath)
+
+	// Preprocess the image into a tensor.
+	tensorData, err := preprocessImage(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to preprocess image: %v", err)
+	}
+
+	// Use the shared inference function.
+	return p.predictFromImageTensor(tensorData)
 }
 
 func (p *PredictionService) GetModelVersions() []config.ModelInfo {

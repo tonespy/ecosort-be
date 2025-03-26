@@ -5,3 +5,4 @@ tmp/
 temp_http/
 *.DS_Store
 __MACOSX/
+wsjobs/
