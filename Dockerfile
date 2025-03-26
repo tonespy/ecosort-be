@@ -17,6 +17,8 @@ ENV CGO_LDFLAGS="-L/usr/local/lib -ltensorflow"
 # Optionally set the LD_LIBRARY_PATH to ensure the runtime linker finds the library.
 ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 ENV LIBRARY_PATH="${LIBRARY_PATH}:/usr/local/lib"
+ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TF_ENABLE_ONEDNN_OPTS=0
 
 WORKDIR /app
 COPY . .
