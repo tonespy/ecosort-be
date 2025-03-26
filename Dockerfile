@@ -19,10 +19,13 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 ENV LIBRARY_PATH="${LIBRARY_PATH}:/usr/local/lib"
 ENV TF_CPP_MIN_LOG_LEVEL=2
 ENV TF_ENABLE_ONEDNN_OPTS=0
+ENV GRPC_VERBOSITY=ERROR
+ENV GLOG_minloglevel=2
 
 WORKDIR /app
 COPY . .
 RUN go build -o ./tmp/main ./cmd/server/
 
 EXPOSE 8080
-CMD ["./tmp/main"]
+# CMD ["./tmp/main"]
+CMD ["sh", "-c", "./tmp/main 2>&1"]
