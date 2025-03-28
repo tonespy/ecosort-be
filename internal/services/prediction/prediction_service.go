@@ -66,7 +66,6 @@ type JobProgress struct {
 	Progress    int                  `json:"progress"`              // Percentage progress (0 to 100)
 	Status      string               `json:"status"`                // e.g. "running", "completed", "stopped"
 	Predictions []JobImagePrediction `json:"predictions,omitempty"` // Batch predictions (e.g., filenames or other result strings)
-	Image       string               `json:"image,omitempty"`       // Optional: base64 encoded image from this batch
 }
 
 // InitModel loads the TensorFlow model once and stores it for reuse.
@@ -118,7 +117,7 @@ func (p *PredictionService) ProcessPredictions(jobID string, files []*multipart.
 
 		var predictions []JobImagePrediction
 		for j := i; j < end; j++ {
-			predictionResult, err := p.PredictImage(filepath.Join(jobDir, files[j].Filename))
+			predictionResult, err := p.PredictImage(filepath.Join(jobDir, getJpgFileName(files[j])))
 			statusInfo := "Completed"
 			if err != nil {
 				statusInfo = "Failed"
@@ -130,14 +129,12 @@ func (p *PredictionService) ProcessPredictions(jobID string, files []*multipart.
 			prediction := JobImagePrediction{
 				JobID:      jobID,
 				Prediction: resultInfo,
-				ImageName:  files[j].Filename,
+				ImageName:  getJpgFileName(files[j]),
 				Status:     statusInfo,
 			}
 			predictions = append(predictions, prediction)
 		}
 
-		// Optional: Here you could encode an image from one of the frames (or batch result)
-		// For simplicity, we leave Image empty in this example.
 		update := JobProgress{
 			Progress:    (end * 100) / total,
 			Status:      "running",
@@ -209,7 +206,7 @@ func validateFile(file *multipart.FileHeader) error {
 
 	// Fallback to file extension if MIME detection fails
 	if mimeType == "application/octet-stream" {
-		ext := filepath.Ext(file.Filename)
+		ext := filepath.Ext(getJpgFileName(file))
 		switch ext {
 		case ".jpg", ".jpeg":
 			mimeType = "image/jpeg"
@@ -279,6 +276,14 @@ func preprocessImage(imagePath string) ([][][]float32, error) {
 	return tensorData, nil
 }
 
+func getJpgFileName(file *multipart.FileHeader) string {
+	fullFileName := file.Filename
+	if filepath.Ext(fullFileName) != ".jpg" {
+		fullFileName += ".jpg"
+	}
+	return fullFileName
+}
+
 func (p *PredictionService) ValidateAndGetTemp(file *multipart.FileHeader) (string, error) {
 	// Validate the file
 	if err := validateFile(file); err != nil {
@@ -291,7 +296,7 @@ func (p *PredictionService) ValidateAndGetTemp(file *multipart.FileHeader) (stri
 		return "", fmt.Errorf("failed to create temp directory: %v", err)
 	}
 
-	filePath := fmt.Sprintf("%s/%s", tmpDir, file.Filename)
+	filePath := fmt.Sprintf("%s/%s", tmpDir, getJpgFileName(file))
 
 	return filePath, nil
 }

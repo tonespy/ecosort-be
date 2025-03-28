@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ func (h *PredictionHandler) BatchPredict(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No files uploaded"})
 		return
 	}
+	// h.PredictionService.Logger.Info("Batch predict", map[string]interface{}{"files": files})
 
 	// Generate a unique job ID.
 	jobID := uuid.New().String()
@@ -42,11 +44,54 @@ func (h *PredictionHandler) BatchPredict(c *gin.Context) {
 	}
 
 	// Save each file.
-	for _, file := range files {
-		savePath := filepath.Join(jobDir, file.Filename)
-		if err := c.SaveUploadedFile(file, savePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save file %s", file.Filename)})
+	// for _, file := range files {
+	// 	savePath := filepath.Join(jobDir, file.Filename)
+	// 	if err := c.SaveUploadedFile(file, savePath); err != nil {
+	// 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save file %s", file.Filename)})
+	// 		return
+	// 	}
+	// }
+
+	// Loop through each uploaded file.
+	for _, fileHeader := range files {
+		// Open the file to read its contents.
+		f, err := fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to open file %s", fileHeader.Filename)})
 			return
+		}
+
+		imageBytes, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read file %s", fileHeader.Filename)})
+			return
+		}
+
+		// Decide whether to use the image bytes directly.
+		// For example, if we have non-zero bytes, process them in memory.
+		fullFileName := fileHeader.Filename
+		if filepath.Ext(fullFileName) != ".jpg" {
+			fullFileName += ".jpg"
+		}
+		savePath := filepath.Join(jobDir, fullFileName)
+		if len(imageBytes) > 0 {
+			// Process the image using the bytes.
+			// h.PredictionService.Logger.Info("Processing image from memory", map[string]interface{}{"file": fullFileName})
+
+			// Save the image data to disk.
+			err = os.WriteFile(savePath, imageBytes, 0644)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save file %s", fileHeader.Filename)})
+				return
+			}
+		} else {
+			// Fallback: if no bytes were read, use the built-in SaveUploadedFile.
+			// h.PredictionService.Logger.Info("No image bytes; saving file using SaveUploadedFile", map[string]interface{}{"file": fileHeader.Filename})
+			if err := c.SaveUploadedFile(fileHeader, savePath); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save file %s", fileHeader.Filename)})
+				return
+			}
 		}
 	}
 

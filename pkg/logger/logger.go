@@ -16,7 +16,7 @@ func NewLogger() *Logger {
 
 	log.SetLevel(logrus.DebugLevel)
 
-	// Set formatter to JSON if you want structured logs
+	// Set formatter to JSON for structured logs
 	log.SetFormatter(&logrus.JSONFormatter{})
 
 	// Log to stdout
