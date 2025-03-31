@@ -1,0 +1,22 @@
+ECO-SORT REFERENCE-ONLY LICENSE
+
+IMPORTANT: PLEASE READ CAREFULLY. THIS LICENSE GRANTS YOU PERMISSION TO USE THE CODE ONLY FOR REFERENCE PURPOSES. ANY OTHER USE IS STRICTLY PROHIBITED AND MAY RESULT IN LEGAL ACTION.
+
+1. GRANT OF LICENSE
+  a. You are granted a non-exclusive, non-transferable, revocable license to access and review the code contained in this repository solely for personal reference.
+  b. This license does not permit you to copy, distribute, modify, or use the code in any production, commercial, or redistributive manner.
+
+2. RESTRICTIONS
+  a. The code may not be used, in whole or in part, as the basis for any software or project beyond mere reference.
+  b. Any reproduction of the code, including verbatim copying, in any public or private medium, is strictly forbidden.
+  c. Attempts to incorporate or integrate any portion of the code into another project, product, or service are expressly prohibited.
+
+3. ENFORCEMENT AND REMEDIES
+  a. Misuse or unauthorized use of the code, including the reproducing it word-for-word, may result in immediate termination of any rights granted under this license.
+  b. The owner reserves the right to pursue all available legal remedies to enforce this license, including seeking monetary damages and injunctive relief.
+
+4. NO WARRANTY
+  a. THE CODE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, WHETHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+  b. THE OWNER SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE OR INABILITY TO USE THE CODE.
+
+BY ACCESSING OR USING THE CODE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS LICENSE, UNDERSTAND ITS TERMS, AND AGREE TO BE BOUND BY THEM.
