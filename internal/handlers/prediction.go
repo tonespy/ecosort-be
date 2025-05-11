@@ -43,15 +43,6 @@ func (h *PredictionHandler) BatchPredict(c *gin.Context) {
 		return
 	}
 
-	// Save each file.
-	// for _, file := range files {
-	// 	savePath := filepath.Join(jobDir, file.Filename)
-	// 	if err := c.SaveUploadedFile(file, savePath); err != nil {
-	// 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save file %s", file.Filename)})
-	// 		return
-	// 	}
-	// }
-
 	// Loop through each uploaded file.
 	for _, fileHeader := range files {
 		// Open the file to read its contents.

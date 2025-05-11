@@ -8,7 +8,6 @@ import (
 	"github.com/tonespy/ecosort_be/pkg/logger"
 )
 
-// ['battery', 'biological', 'brown-glass', 'cardboard', 'clothes', 'green-glass', 'metal', 'paper', 'plastic', 'shoes', 'trash', 'white-glass']
 func main() {
 	app_config, err := config.PrepareConfig()
 	if err != nil {

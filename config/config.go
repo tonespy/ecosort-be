@@ -292,7 +292,6 @@ func PrepareConfig() (*Config, error) {
 	err = godotenv.Load()
 	if err != nil {
 		fmt.Printf("No .env file found. Assuming environment variables are set by the system.")
-		// return nil, fmt.Errorf("error loading .env file: %v", err)
 	}
 
 	ginMode := os.Getenv("GIN_MODE")
@@ -418,12 +417,6 @@ func DownloadModel(config Config) error {
 	if err != nil {
 		fmt.Printf("Error removing zip file: %v\n", err)
 	}
-
-	// key, err := GenerateAPIKey(32)
-	// if err != nil {
-	// 	fmt.Printf("Error generating API key: %v\n", err)
-	// }
-	// fmt.Printf("Generated API key: %s\n", key)
 
 	return nil
 }
